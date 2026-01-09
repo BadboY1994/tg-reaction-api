@@ -3,7 +3,7 @@ const { google } = require('googleapis');
 const oauth2Client = new google.auth.OAuth2(
   '360046090898-rsp1okgmef2f82htuhm5jhvmf78p7n3c.apps.googleusercontent.com',
   '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',
-  'https://developers.google.com/oauthplayground'
+  process.env.REDIRECT_URI || 'https://tg-token-finder.vercel.app/callback'
 );
 
 oauth2Client.setCredentials({
@@ -135,9 +135,14 @@ module.exports = async (req, res) => {
   if (req.method === 'GET' && req.url === '/auth') {
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      scope: ['https://www.googleapis.com/auth/youtube.force-ssl']
+      scope: ['https://www.googleapis.com/auth/youtube.force-ssl'],
+      prompt: 'consent'
     });
-    res.status(200).json({ authUrl });
+    res.status(200).json({ 
+      authUrl,
+      redirectUri: process.env.REDIRECT_URI || 'https://tg-token-finder.vercel.app/callback',
+      note: 'Make sure this redirect URI is added in Google Cloud Console'
+    });
     return;
   }
 
@@ -154,7 +159,8 @@ module.exports = async (req, res) => {
       const { tokens } = await oauth2Client.getToken(code);
       res.status(200).json({ 
         refresh_token: tokens.refresh_token,
-        message: 'Add this refresh_token to YOUTUBE_REFRESH_TOKEN environment variable'
+        access_token: tokens.access_token,
+        message: 'Add refresh_token to YOUTUBE_REFRESH_TOKEN in Vercel environment variables'
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
