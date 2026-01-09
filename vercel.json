@@ -8,14 +8,8 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/",
       "dest": "/index.js"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/trigger",
-      "schedule": "*/1 * * * *"
     }
   ]
 }
