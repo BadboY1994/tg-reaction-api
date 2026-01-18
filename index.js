@@ -129,13 +129,6 @@ export default async(req,res)=>{
    await api(TOKEN,"sendMessage",{chat_id:c,reply_to_message_id:m,parse_mode:"HTML",text:"🎲 Enter reaction probability 0-100",reply_markup:{force_reply:true}})
   }
 
-  
-
-  if(d.startsWith("s_")){
-   await set("/channels/"+c+"/"+d,true)
-   await api(TOKEN,"editMessageText",{chat_id:c,message_id:m,parse_mode:"HTML",text:"<b>✅ Smart Rule Enabled</b>\n\nLogic applied.",reply_markup:back})
-  }
-
   if(d==="test"){
    const l=await get("/last")
    const bots=await get("/bots")||{}
@@ -153,14 +146,19 @@ export default async(req,res)=>{
   const cfg=await get("/channels/"+chat)||{}
   const bots=await get("/bots")||{}
   const txt=p.text||""
+  const isMedia=!!(p.photo||p.video||p.document||p.audio)
 
   const h=new Date().getHours()
   if(cfg.night_start!==undefined && cfg.night_end!==undefined){
-   if(h>=cfg.night_start && h<=cfg.night_end)return res.end("OK")
+   if(cfg.night_start<=cfg.night_end){
+    if(h>=cfg.night_start && h<hcfg.night_end)return res.end("OK")
+   }else{
+    if(h>=cfg.night_start || h<cfg.night_end)return res.end("OK")
+   }
   }
 
-  if(cfg.f_text && !p.text)return res.end("OK")
-  if(cfg.f_media && !p.photo && !p.video)return res.end("OK")
+  if(cfg.f_text && isMedia)return res.end("OK")
+  if(cfg.f_media && !isMedia)return res.end("OK")
   if(cfg.f_poll && p.poll)return res.end("OK")
   if(cfg.f_fwd && p.forward_from)return res.end("OK")
   if(cfg.prob && Math.random()*100>cfg.prob)return res.end("OK")
