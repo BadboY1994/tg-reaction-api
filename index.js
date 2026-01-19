@@ -13,6 +13,7 @@ export default async (req, res) => {
   const { query } = parse(req.url, true);
   const tokens = query.token ? query.token.split(',').map(t => t.trim()) : [];
   const chatIds = query.chat ? query.chat.split(',').map(c => c.trim()) : [];
+  const messageIds = query.message ? query.message.split(',').map(m => m.trim()) : [];
 
   if (!tokens.length) {
     return res.status(400).json({ error: 'No bot tokens provided' });
@@ -20,6 +21,10 @@ export default async (req, res) => {
 
   if (!chatIds.length) {
     return res.status(400).json({ error: 'No chat IDs provided' });
+  }
+
+  if (!messageIds.length) {
+    return res.status(400).json({ error: 'No message IDs provided' });
   }
 
   const body = await new Promise((resolve) => {
@@ -38,17 +43,20 @@ export default async (req, res) => {
   const combinations = [];
   tokens.forEach(token => {
     chatIds.forEach(chatId => {
-      combinations.push({ token, chatId });
+      messageIds.forEach(messageId => {
+        combinations.push({ token, chatId, messageId });
+      });
     });
   });
 
   const results = await Promise.allSettled(
-    combinations.map(combo => makeRequest(combo.token, combo.chatId, requestData))
+    combinations.map(combo => makeRequest(combo.token, combo.chatId, combo.messageId, requestData))
   );
 
   const response = results.map((result, index) => ({
     token: combinations[index].token,
     chat_id: combinations[index].chatId,
+    message_id: combinations[index].messageId,
     status: result.status,
     data: result.status === 'fulfilled' ? result.value : result.reason
   }));
@@ -56,9 +64,9 @@ export default async (req, res) => {
   res.status(200).json({ results: response });
 };
 
-function makeRequest(token, chatId, data) {
+function makeRequest(token, chatId, messageId, data) {
   return new Promise((resolve, reject) => {
-    const payload = { ...data, chat_id: chatId };
+    const payload = { ...data, chat_id: chatId, message_id: messageId };
     const postData = JSON.stringify(payload);
     const options = {
       hostname: 'api.telegram.org',
