@@ -128,10 +128,3 @@ function makeRequest(token, chatId, messageId, reaction) {
     request.end();
   });
 }
-```
-
-**Usage examples:**
-```
-GET https://your-url.vercel.app/?token=TOKEN1,TOKEN2&chat=CHAT1&message=MSG1&react=positive
-GET https://your-url.vercel.app/?token=TOKEN1,TOKEN2&chat=CHAT1&message=MSG1&react=negative
-GET https://your-url.vercel.app/?token=TOKEN1,TOKEN2&chat=CHAT1&message=MSG1&react=mix
