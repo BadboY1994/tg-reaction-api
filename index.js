@@ -131,44 +131,50 @@ export default async (req, res) => {
   }
 
   if (!messageIds.length) {
-    const usedReactions = new Map();
-    const combinations = [];
+    const chatMessageMap = new Map();
     
-    for (const token of tokens) {
-      for (const chatId of chatIds) {
-        try {
-          const messageId = await getLatestMessage(token, chatId);
-          const key = `${chatId}-${messageId}`;
-          
-          if (!usedReactions.has(key)) {
-            usedReactions.set(key, new Set());
-          }
-          
-          let reaction = getRandomReaction(reactType);
-          const usedSet = usedReactions.get(key);
-          let attempts = 0;
-          const maxPool = reactType === 'positive' ? positiveReactions.length : 
-                          reactType === 'negative' ? negativeReactions.length : allReactions.length;
-          
-          while (usedSet.has(reaction) && usedSet.size < maxPool && attempts < 100) {
-            reaction = getRandomReaction(reactType);
-            attempts++;
-          }
-          
-          usedSet.add(reaction);
-          combinations.push({ token, chatId, messageId: messageId.toString(), reaction });
-        } catch (error) {
-          console.error(`Failed to get message for chat ${chatId}:`, error.message);
-        }
+    for (const chatId of chatIds) {
+      try {
+        const messageId = await getLatestMessage(tokens[0], chatId);
+        chatMessageMap.set(chatId, messageId.toString());
+      } catch (error) {
+        console.error(`Failed to get message for chat ${chatId}:`, error.message);
       }
     }
     
-    if (combinations.length === 0) {
+    if (chatMessageMap.size === 0) {
       return res.status(400).json({ 
         error: 'Could not fetch latest messages from any chat',
         hint: 'Make sure the bot has received at least one message in the chat and has access to message history'
       });
     }
+
+    const usedReactions = new Map();
+    const combinations = [];
+    
+    tokens.forEach(token => {
+      chatMessageMap.forEach((messageId, chatId) => {
+        const key = `${chatId}-${messageId}`;
+        
+        if (!usedReactions.has(key)) {
+          usedReactions.set(key, new Set());
+        }
+        
+        let reaction = getRandomReaction(reactType);
+        const usedSet = usedReactions.get(key);
+        let attempts = 0;
+        const maxPool = reactType === 'positive' ? positiveReactions.length : 
+                        reactType === 'negative' ? negativeReactions.length : allReactions.length;
+        
+        while (usedSet.has(reaction) && usedSet.size < maxPool && attempts < 100) {
+          reaction = getRandomReaction(reactType);
+          attempts++;
+        }
+        
+        usedSet.add(reaction);
+        combinations.push({ token, chatId, messageId, reaction });
+      });
+    });
     
     const results = await Promise.allSettled(
       combinations.map(combo => makeRequest(combo.token, combo.chatId, combo.messageId, combo.reaction))
