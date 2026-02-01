@@ -20,7 +20,7 @@ function getLatestMessage(token, chatId) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.telegram.org',
-      path: `/bot${token}/getUpdates?limit=100&offset=-100`,
+      path: `/bot${token}/getUpdates?limit=100&allowed_updates=["message","channel_post"]`,
       method: 'GET'
     };
 
@@ -31,16 +31,20 @@ function getLatestMessage(token, chatId) {
         try {
           const result = JSON.parse(data);
           if (result.ok && result.result.length > 0) {
-            for (let i = result.result.length - 1; i >= 0; i--) {
-              const update = result.result[i];
+            const updates = result.result.reverse();
+            for (const update of updates) {
               const message = update.channel_post || update.message;
-              if (message && message.chat.id.toString() === chatId.toString()) {
-                resolve(message.message_id);
-                return;
+              if (message) {
+                const msgChatId = message.chat.id.toString();
+                const targetChatId = chatId.toString();
+                if (msgChatId === targetChatId) {
+                  resolve(message.message_id);
+                  return;
+                }
               }
             }
           }
-          reject(new Error('No message found in chat'));
+          reject(new Error(`No message found for chat ${chatId}`));
         } catch (e) {
           reject(e);
         }
@@ -48,6 +52,10 @@ function getLatestMessage(token, chatId) {
     });
 
     request.on('error', reject);
+    request.setTimeout(10000, () => {
+      request.destroy();
+      reject(new Error('Request timeout'));
+    });
     request.end();
   });
 }
@@ -84,6 +92,10 @@ function makeRequest(token, chatId, messageId, reaction) {
     });
 
     request.on('error', reject);
+    request.setTimeout(10000, () => {
+      request.destroy();
+      reject(new Error('Request timeout'));
+    });
     request.write(postData);
     request.end();
   });
@@ -119,31 +131,15 @@ export default async (req, res) => {
   }
 
   if (!messageIds.length) {
-    const fetchPromises = [];
-    chatIds.forEach(chatId => {
-      fetchPromises.push(
-        getLatestMessage(tokens[0], chatId)
-          .then(msgId => ({ chatId, messageId: msgId.toString() }))
-          .catch(() => ({ chatId, messageId: null }))
-      );
-    });
+    const usedReactions = new Map();
+    const combinations = [];
     
-    try {
-      const fetchedMessages = await Promise.all(fetchPromises);
-      const validMessages = fetchedMessages.filter(m => m.messageId !== null);
-      
-      if (validMessages.length === 0) {
-        return res.status(400).json({ error: 'Could not fetch latest messages from any chat' });
-      }
-      
-      messageIds = validMessages.map(m => m.messageId);
-      
-      const usedReactions = new Map();
-      const combinations = [];
-      
-      tokens.forEach(token => {
-        validMessages.forEach(({ chatId, messageId }) => {
+    for (const token of tokens) {
+      for (const chatId of chatIds) {
+        try {
+          const messageId = await getLatestMessage(token, chatId);
           const key = `${chatId}-${messageId}`;
+          
           if (!usedReactions.has(key)) {
             usedReactions.set(key, new Set());
           }
@@ -160,28 +156,34 @@ export default async (req, res) => {
           }
           
           usedSet.add(reaction);
-          combinations.push({ token, chatId, messageId, reaction });
-        });
-      });
-      
-      const results = await Promise.allSettled(
-        combinations.map(combo => makeRequest(combo.token, combo.chatId, combo.messageId, combo.reaction))
-      );
-
-      const response = results.map((result, index) => ({
-        token: combinations[index].token,
-        chat_id: combinations[index].chatId,
-        message_id: combinations[index].messageId,
-        reaction: combinations[index].reaction,
-        status: result.status,
-        data: result.status === 'fulfilled' ? result.value : result.reason
-      }));
-
-      return res.status(200).json({ results: response });
-      
-    } catch (error) {
-      return res.status(400).json({ error: 'Error fetching messages', details: error.message });
+          combinations.push({ token, chatId, messageId: messageId.toString(), reaction });
+        } catch (error) {
+          console.error(`Failed to get message for chat ${chatId}:`, error.message);
+        }
+      }
     }
+    
+    if (combinations.length === 0) {
+      return res.status(400).json({ 
+        error: 'Could not fetch latest messages from any chat',
+        hint: 'Make sure the bot has received at least one message in the chat and has access to message history'
+      });
+    }
+    
+    const results = await Promise.allSettled(
+      combinations.map(combo => makeRequest(combo.token, combo.chatId, combo.messageId, combo.reaction))
+    );
+
+    const response = results.map((result, index) => ({
+      token: combinations[index].token,
+      chat_id: combinations[index].chatId,
+      message_id: combinations[index].messageId,
+      reaction: combinations[index].reaction,
+      status: result.status,
+      data: result.status === 'fulfilled' ? result.value : result.reason
+    }));
+
+    return res.status(200).json({ results: response });
   }
 
   const usedReactions = new Map();
